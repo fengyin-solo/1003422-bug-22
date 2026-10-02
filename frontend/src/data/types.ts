@@ -5,7 +5,9 @@ export type EntryRow = {
   status: string
   pending: boolean
   abnormal: boolean
-  [field: string]: string | number | boolean
+  /** 乐观并发版本号：每次成功落库 +1，另一监测端基于旧版本提交会被判为冲突。 */
+  revision?: number
+  [field: string]: string | number | boolean | undefined
 }
 
 export type ModuleMeta = {
@@ -15,6 +17,8 @@ export type ModuleMeta = {
   desc: string
   fields: string[]
   statuses: string[]
+  /** 办结态：进入这些状态就算处置完，不再计入待办；其余状态一律算待处理。 */
+  settledStatuses: string[]
   actions: string[]
   actionTargets: Record<string, string>
   metrics: string[]

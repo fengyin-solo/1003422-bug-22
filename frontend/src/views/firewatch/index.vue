@@ -24,6 +24,24 @@
       </span>
     </p>
 
+    <form v-if="showCreate" class="create-panel" @submit.prevent="submitCreate">
+      <label v-for="field in columns" :key="field" class="filter-item">
+        <span>{{ field }}</span>
+        <input v-model="draft[field]" :placeholder="`请输入${field}`" />
+      </label>
+      <label class="filter-item">
+        <span>初始状态</span>
+        <select v-model="draftStatus">
+          <option v-for="status in statuses" :key="status" :value="status">{{ status }}</option>
+        </select>
+      </label>
+      <div class="create-actions">
+        <button class="btn primary" type="submit">提交登记</button>
+        <button class="btn ghost" type="button" @click="closeCreate">取消</button>
+      </div>
+      <p class="create-hint">缺风力或湿度读数、读数越界的监测点不能登记为「正常」；边界由数据服务统一校验，不只靠入口拦截。</p>
+    </form>
+
     <form class="filter-bar" @submit.prevent="reload">
       <label v-for="field in filterFields" :key="field" class="filter-item">
         <span>{{ field }}</span>
@@ -74,6 +92,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import {
+  createEntry,
   downloadEntries,
   listEntries,
   moduleMeta,
@@ -85,13 +104,30 @@ const meta = moduleMeta('firewatch')
 const columns = ["监测点编号", "监测区域", "火险等级", "风力等级", "相对湿度", "气温读数", "监测时间", "监测状态"]
 const actions = ["更新等级", "解除预警", "升级预警"]
 const statuses = ["正常", "蓝色预警", "黄色预警", "橙色预警", "红色预警"]
-const stats = [{"label": "监测点数", "value": 0}, {"label": "红色预警数", "value": 0}, {"label": "今日新增预警", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const showCreate = ref(false)
+const draft = ref<Record<string, string>>({})
+const draftStatus = ref(statuses[0])
+const statSource = ref<EntryRow[]>([])
+
+const stats = computed(() => {
+  const today = new Date().toISOString().slice(0, 10)
+  return [
+    { label: '监测点数', value: statSource.value.length },
+    { label: '红色预警数', value: statSource.value.filter((row) => String(row.status) === '红色预警').length },
+    {
+      label: '今日新增预警',
+      value: statSource.value.filter(
+        (row) => String(row.status).includes('预警') && String(row['监测时间'] ?? '') === today,
+      ).length,
+    },
+  ]
+})
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -109,25 +145,50 @@ function exportRows() {
 }
 
 function openCreate() {
-  errorMessage.value = '火险监测点登记入口尚未接入审批流'
+  errorMessage.value = ''
+  draft.value = Object.fromEntries(columns.map((field) => [field, '']))
+  draftStatus.value = statuses[0]
+  showCreate.value = true
+}
+
+function closeCreate() {
+  showCreate.value = false
+}
+
+function submitCreate() {
+  errorMessage.value = ''
+  const values = { ...draft.value }
+  if (!String(values['监测状态'] ?? '').trim()) {
+    values['监测状态'] = draftStatus.value
+  }
+  const result = createEntry(meta.key, values, draftStatus.value)
+  if (!result.ok) {
+    errorMessage.value = result.message
+    reload()
+    return
+  }
+  showCreate.value = false
+  reload()
 }
 
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  // 带上页面看到的版本号：另一监测端若已改过这条，服务端按冲突拒绝，只落库一条。
+  const result = applyAction(meta.key, Number(row.id), action, Number(row.revision ?? 1))
   if (!result.ok) {
     errorMessage.value = result.message
+    reload()
     return
   }
   reload()
 }
 
 function reload() {
-  errorMessage.value = ''
   try {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    statSource.value = listEntries(meta.key).items
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '火险监测列表读取失败'
   }
