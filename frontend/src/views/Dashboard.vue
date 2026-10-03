@@ -35,9 +35,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
-import { loadOverview } from '@/api/local-service'
+import { loadOverview, resumePendingActions } from '@/api/local-service'
 import type { OverviewResult } from '@/data/types'
 
 const cards = ref<OverviewResult['cards']>([])
@@ -49,5 +49,20 @@ function refresh() {
   moduleRows.value = payload.modules
 }
 
-onMounted(refresh)
+// 网络恢复后先续传挂起的处置面板上报，再刷新统计。
+function handleRecovery() {
+  resumePendingActions()
+  refresh()
+}
+
+onMounted(() => {
+  refresh()
+  window.addEventListener('online', handleRecovery)
+  window.addEventListener('storage', refresh)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('online', handleRecovery)
+  window.removeEventListener('storage', refresh)
+})
 </script>

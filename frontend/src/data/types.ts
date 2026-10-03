@@ -30,6 +30,10 @@ export type PageResult = {
 export type ActionResult = {
   ok: boolean
   message: string
+  /** 台账已落库但处置面板上报未完成（断网），恢复网络后会自动续传 */
+  pendingSync?: boolean
+  /** 与另一个监测端的并发更新冲突，当前页面数据已过期，需要刷新后以现场复检为准 */
+  conflict?: boolean
 }
 
 export type OverviewResult = {

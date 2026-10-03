@@ -114,9 +114,15 @@ function openCreate() {
 
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  const result = applyAction(meta.key, Number(row.id), action, {
+    expectedRevision: Number(row.revision ?? 1),
+  })
   if (!result.ok) {
     errorMessage.value = result.message
+    // 并发冲突后页面数据已过期，刷回最新台账，再按提示走现场复检。
+    if (result.conflict) {
+      reload()
+    }
     return
   }
   reload()
